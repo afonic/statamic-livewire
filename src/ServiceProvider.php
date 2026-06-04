@@ -57,9 +57,10 @@ class ServiceProvider extends AddonServiceProvider
 
     protected function bootReplacers(): void
     {
+        // Addon replacers run last so AssetsReplacer sees flags mutated by NoCacheReplacer.
         config()->set('statamic.static_caching.replacers', array_merge(
-            config()->array('statamic-livewire.replacers', []),
-            config()->array('statamic.static_caching.replacers', [])
+            config()->array('statamic.static_caching.replacers', []),
+            config()->array('statamic-livewire.replacers', [])
         ));
     }
 

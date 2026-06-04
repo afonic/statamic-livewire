@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Static Caching Test</title>
+    {{ if has_styles }}{{ livewire:styles }}{{ /if }}
+</head>
+<body>
+    {{ if has_nocache }}
+        {{ nocache }}{{ livewire:static-caching-counter /}}{{ /nocache }}
+    {{ else }}
+        {{ livewire:static-caching-counter /}}
+    {{ /if }}
+
+    {{ if has_scripts }}{{ livewire:scripts }}{{ /if }}
+</body>
+</html>
