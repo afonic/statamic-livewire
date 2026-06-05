@@ -60,12 +60,9 @@ class ServiceProvider extends AddonServiceProvider
     protected function bootReplacers(): void
     {
         /**
-         * Order is load-bearing: NoCacheReplacer renders the nocache regions,
-         * so it must run before AssetsReplacer can bake assets for components
-         * inside them. AssetsReplacer must run before CsrfTokenReplacer so the
-         * baked tags get their CSRF token placeholdered (a real token in the
-         * cache would be served to every visitor). The suppression replacer
-         * runs last, after the regions have re-rendered on a cache hit.
+         * Order matters: NoCacheReplacer first, then the addon replacers, then
+         * the suppression replacer last. array_unique keeps the merge
+         * idempotent across config:cache re-runs.
          */
         $statamicReplacers = config()->array('statamic.static_caching.replacers', []);
 
@@ -79,12 +76,12 @@ class ServiceProvider extends AddonServiceProvider
             fn (string $replacer) => ! is_a($replacer, NoCacheReplacer::class, true),
         ));
 
-        config()->set('statamic.static_caching.replacers', array_merge(
+        config()->set('statamic.static_caching.replacers', array_values(array_unique(array_merge(
             $noCacheReplacers,
             config()->array('statamic-livewire.replacers', []),
             $remainingReplacers,
             [SuppressAssetsInjectionReplacer::class],
-        ));
+        ))));
     }
 
     protected function bootSynthesizers(): void
