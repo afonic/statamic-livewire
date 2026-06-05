@@ -31,8 +31,8 @@ A third-party [Laravel Livewire](https://laravel-livewire.com/) integration for 
 
 ## Requirements
 - PHP 8.2+
-- Laravel 11+
-- Statamic 5+
+- Laravel 12+
+- Statamic 6+
 
 ## Installation
 Install the addon via composer:
@@ -151,7 +151,7 @@ If you are using full measure static caching, and you're manually bundling Livew
 
 ```js
 if (window.livewireScriptConfig?.csrf === 'STATAMIC_CSRF_TOKEN') {
-    document.addEventListener('statamic:nocache.replaced', () => Livewire.start());
+    document.addEventListener('statamic:csrf.replaced', () => Livewire.start());
 } else {
     Livewire.start();
 }
