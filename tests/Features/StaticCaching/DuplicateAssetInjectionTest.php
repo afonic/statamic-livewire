@@ -42,6 +42,22 @@ class DuplicateAssetInjectionTest extends TestCase
         $router->get('/assets-page', function () {
             return view('static-caching-assets-page')->render();
         })->middleware(StaticCacheMiddleware::class);
+
+        $router->get('/missing-page', function () {
+            return response(view('static-caching-page', [
+                'has_nocache' => true,
+                'has_scripts' => true,
+                'has_styles' => true,
+            ])->render(), 404);
+        })->middleware(StaticCacheMiddleware::class);
+
+        $router->get('/draft-page', function () {
+            return response(view('static-caching-page', [
+                'has_nocache' => true,
+                'has_scripts' => false,
+                'has_styles' => false,
+            ])->render())->header('X-Statamic-Draft', 'true');
+        })->middleware(StaticCacheMiddleware::class);
     }
 
     protected function setUp(): void
@@ -229,6 +245,121 @@ class DuplicateAssetInjectionTest extends TestCase
             1,
             $this->countLivewireScriptTags($second->content()),
             'Livewire assets were wrongly suppressed on a fresh non-cacheable response',
+        );
+    }
+
+    /**
+     * ApplicationCacher (half measure) caches 404s too — think a custom 404
+     * page with a Livewire search component. The cached status must survive
+     * the hit and the manual asset tags must not drift (Livewire skips auto
+     * injection on non-200 responses, so manual tags are the realistic setup).
+     */
+    #[Test]
+    public function cached_404_pages_keep_their_status_and_asset_tags_on_cache_hit(): void
+    {
+        $this->configureScenario('half', true);
+        StaticCache::flush();
+
+        $miss = $this->get('/missing-page');
+        $miss->assertNotFound();
+        $this->assertSame(
+            1,
+            $this->countLivewireScriptTags($miss->content()),
+            'expected exactly one manual script tag on the fresh 404',
+        );
+
+        $this->resetState();
+        $this->configureScenario('half', true);
+
+        $hit = $this->get('/missing-page');
+        $hit->assertNotFound();
+        $this->assertSame(
+            ResponseStatus::HIT,
+            $hit->baseResponse->staticCacheResponseStatus(),
+            'expected the 404 to be served from cache on the second request',
+        );
+        $this->assertSame(
+            1,
+            $this->countLivewireScriptTags($hit->content()),
+            'script tag count drifted on the cached 404',
+        );
+        $this->assertSame(
+            1,
+            $this->countLivewireStyleBlocks($hit->content()),
+            'style block count drifted on the cached 404',
+        );
+    }
+
+    /**
+     * Statamic's recache flow re-requests cached URLs with a recache token to
+     * refresh them. Those requests bypass the cached page and must be served
+     * fresh with assets injected normally. The bypass is enforced by the
+     * middleware's canBeCached() — recache responses take the re-cache path
+     * where replaceInCachedResponse() never runs — so this pins the
+     * end-to-end behavior rather than the replacer's own recache guard.
+     */
+    #[Test]
+    public function recache_token_requests_are_served_fresh_with_assets_injected(): void
+    {
+        $this->configureScenario('half', true);
+        StaticCache::flush();
+
+        $url = '/test-page?nocache=1&scripts=0&styles=0';
+
+        $miss = $this->get($url);
+        $miss->assertOk();
+        $this->assertSame(1, $this->countLivewireScriptTags($miss->content()));
+
+        $this->resetState();
+        $this->configureScenario('half', true);
+
+        $recache = $this->get($url.'&'.http_build_query([
+            StaticCache::recacheTokenParameter() => StaticCache::recacheToken(),
+        ]));
+        $recache->assertOk();
+        $this->assertNotSame(
+            ResponseStatus::HIT,
+            $recache->baseResponse->staticCacheResponseStatus(),
+            'a valid recache token request must never be served from cache',
+        );
+        $this->assertSame(
+            1,
+            $this->countLivewireScriptTags($recache->content()),
+            'Livewire assets were wrongly suppressed on a recache token request',
+        );
+    }
+
+    /**
+     * Draft responses (e.g. Live Preview of an unpublished entry) carry the
+     * X-Statamic-Draft header, are never cached, and must keep normal asset
+     * injection on every request. Since drafts never enter the cache, the
+     * operative guard is the replacer's final hasCachedPage() check (the
+     * header branch is defense in depth) — this pins the end-to-end behavior.
+     */
+    #[Test]
+    public function draft_responses_are_never_cached_and_keep_injected_assets(): void
+    {
+        $this->configureScenario('half', true);
+        StaticCache::flush();
+
+        $first = $this->get('/draft-page');
+        $first->assertOk();
+        $this->assertSame(1, $this->countLivewireScriptTags($first->content()));
+
+        $this->resetState();
+        $this->configureScenario('half', true);
+
+        $second = $this->get('/draft-page');
+        $second->assertOk();
+        $this->assertNotSame(
+            ResponseStatus::HIT,
+            $second->baseResponse->staticCacheResponseStatus(),
+            'a draft response must never be served from cache',
+        );
+        $this->assertSame(
+            1,
+            $this->countLivewireScriptTags($second->content()),
+            'Livewire assets were wrongly suppressed on a draft response',
         );
     }
 
