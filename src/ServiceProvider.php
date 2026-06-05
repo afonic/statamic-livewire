@@ -11,8 +11,10 @@ use MarcoRieser\Livewire\Hooks\ComputedPropertiesAutoloader;
 use MarcoRieser\Livewire\Hooks\SynthesizerAugmentor;
 use MarcoRieser\Livewire\Http\Middleware\HydrateCascadeByLivewireUrl;
 use MarcoRieser\Livewire\Http\Middleware\ResolveCurrentSiteByLivewireUrl;
+use MarcoRieser\Livewire\Replacers\SuppressAssetsInjectionReplacer;
 use Statamic\Http\Middleware\Localize;
 use Statamic\Providers\AddonServiceProvider;
+use Statamic\StaticCaching\Replacers\NoCacheReplacer;
 
 class ServiceProvider extends AddonServiceProvider
 {
@@ -57,10 +59,31 @@ class ServiceProvider extends AddonServiceProvider
 
     protected function bootReplacers(): void
     {
-        // Addon replacers run last so AssetsReplacer sees flags mutated by NoCacheReplacer.
+        /**
+         * Order is load-bearing: NoCacheReplacer renders the nocache regions,
+         * so it must run before AssetsReplacer can bake assets for components
+         * inside them. AssetsReplacer must run before CsrfTokenReplacer so the
+         * baked tags get their CSRF token placeholdered (a real token in the
+         * cache would be served to every visitor). The suppression replacer
+         * runs last, after the regions have re-rendered on a cache hit.
+         */
+        $statamicReplacers = config()->array('statamic.static_caching.replacers', []);
+
+        $noCacheReplacers = array_values(array_filter(
+            $statamicReplacers,
+            fn (string $replacer) => is_a($replacer, NoCacheReplacer::class, true),
+        ));
+
+        $remainingReplacers = array_values(array_filter(
+            $statamicReplacers,
+            fn (string $replacer) => ! is_a($replacer, NoCacheReplacer::class, true),
+        ));
+
         config()->set('statamic.static_caching.replacers', array_merge(
-            config()->array('statamic.static_caching.replacers', []),
-            config()->array('statamic-livewire.replacers', [])
+            $noCacheReplacers,
+            config()->array('statamic-livewire.replacers', []),
+            $remainingReplacers,
+            [SuppressAssetsInjectionReplacer::class],
         ));
     }
 
