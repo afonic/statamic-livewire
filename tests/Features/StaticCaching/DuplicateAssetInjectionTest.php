@@ -7,6 +7,7 @@ use Livewire\Features\SupportScriptsAndAssets\SupportScriptsAndAssets;
 use Livewire\Livewire;
 use MarcoRieser\Livewire\Tests\Fixtures\Livewire\AssetsCounter;
 use MarcoRieser\Livewire\Tests\Fixtures\Livewire\StaticCachingCounter;
+use MarcoRieser\Livewire\Tests\Fixtures\Tags\StaticCachingGate;
 use MarcoRieser\Livewire\Tests\TestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
@@ -43,6 +44,10 @@ class DuplicateAssetInjectionTest extends TestCase
             return view('static-caching-assets-page')->render();
         })->middleware(StaticCacheMiddleware::class);
 
+        $router->get('/gated-page', function () {
+            return view('static-caching-gated-page')->render();
+        })->middleware(StaticCacheMiddleware::class);
+
         $router->get('/missing-page', function () {
             return response(view('static-caching-page', [
                 'has_nocache' => true,
@@ -66,10 +71,16 @@ class DuplicateAssetInjectionTest extends TestCase
 
         Livewire::component('static-caching-counter', StaticCachingCounter::class);
         Livewire::component('assets-counter', AssetsCounter::class);
+
+        StaticCachingGate::register();
+
+        $this->resetState();
     }
 
     protected function tearDown(): void
     {
+        StaticCachingGate::$component = null;
+
         if (isset($this->fileCachePath)) {
             (new Filesystem)->deleteDirectory($this->fileCachePath);
         }
@@ -153,10 +164,8 @@ class DuplicateAssetInjectionTest extends TestCase
     }
 
     /**
-     * KNOWN LIMITATION: full-measure nocache regions render client-side, so a
-     * page whose only Livewire components live inside them never triggers
-     * asset injection — manual asset tags are required (scenario 2). This
-     * test pins the current behavior.
+     * KNOWN LIMITATION: full-measure regions render client-side and never
+     * trigger asset injection — manual asset tags are required.
      */
     #[Test]
     public function full_measure_with_only_nocache_components_requires_manual_asset_tags(): void
@@ -214,6 +223,181 @@ class DuplicateAssetInjectionTest extends TestCase
         );
     }
 
+    /**
+     * A component the warming request never rendered (e.g. login-gated)
+     * must still get its assets injected on the hit.
+     */
+    #[Test]
+    public function component_rendered_only_on_hit_gets_livewire_assets_injected(): void
+    {
+        $this->configureScenario('half', true);
+        StaticCache::flush();
+
+        StaticCachingGate::$component = null;
+
+        $miss = $this->get('/gated-page');
+        $miss->assertOk();
+        $this->assertSame(
+            0,
+            $this->countLivewireScriptTags($miss->content()),
+            'expected no Livewire assets on the warming response without a component',
+        );
+
+        $this->resetState();
+        $this->configureScenario('half', true);
+
+        StaticCachingGate::$component = 'static-caching-counter';
+
+        $hit = $this->get('/gated-page');
+        $hit->assertOk();
+        $this->assertSame(
+            ResponseStatus::HIT,
+            $hit->baseResponse->staticCacheResponseStatus(),
+            'expected second request to be served from cache',
+        );
+        $this->assertStringContainsString(
+            'wire:id',
+            $hit->content(),
+            'expected the gated component to render inside the nocache region',
+        );
+        $this->assertSame(
+            1,
+            $this->countLivewireScriptTags($hit->content()),
+            'Livewire scripts must be injected when the cached shell does not contain them',
+        );
+        $this->assertSame(
+            1,
+            $this->countLivewireStyleBlocks($hit->content()),
+            'Livewire styles must be injected when the cached shell does not contain them',
+        );
+    }
+
+    #[Test]
+    public function assets_block_rendered_only_on_hit_is_injected(): void
+    {
+        $this->configureScenario('half', true);
+        StaticCache::flush();
+
+        StaticCachingGate::$component = null;
+
+        $miss = $this->get('/gated-page');
+        $miss->assertOk();
+        $this->assertSame(
+            0,
+            substr_count($miss->content(), 'fake-head-asset.js'),
+            'expected no @assets asset on the warming response without a component',
+        );
+
+        $this->resetState();
+        $this->configureScenario('half', true);
+
+        StaticCachingGate::$component = 'assets-counter';
+
+        $hit = $this->get('/gated-page');
+        $hit->assertOk();
+        $this->assertSame(
+            ResponseStatus::HIT,
+            $hit->baseResponse->staticCacheResponseStatus(),
+            'expected second request to be served from cache',
+        );
+        $this->assertSame(
+            1,
+            substr_count($hit->content(), 'fake-head-asset.js'),
+            'an @assets asset collected only on the hit must be injected',
+        );
+        $this->assertSame(
+            1,
+            $this->countLivewireScriptTags($hit->content()),
+            'Livewire scripts must be injected when the cached shell does not contain them',
+        );
+    }
+
+    #[Test]
+    public function new_assets_block_on_hit_is_injected_without_duplicating_baked_scripts(): void
+    {
+        $this->configureScenario('half', true);
+        StaticCache::flush();
+
+        StaticCachingGate::$component = 'static-caching-counter';
+
+        $miss = $this->get('/gated-page');
+        $miss->assertOk();
+        $this->assertSame(1, $this->countLivewireScriptTags($miss->content()));
+        $this->assertSame(
+            0,
+            substr_count($miss->content(), 'fake-head-asset.js'),
+            'the warming component must not collect the @assets asset',
+        );
+
+        $this->resetState();
+        $this->configureScenario('half', true);
+
+        StaticCachingGate::$component = 'assets-counter';
+
+        $hit = $this->get('/gated-page');
+        $hit->assertOk();
+        $this->assertSame(
+            ResponseStatus::HIT,
+            $hit->baseResponse->staticCacheResponseStatus(),
+            'expected second request to be served from cache',
+        );
+        $this->assertSame(
+            1,
+            substr_count($hit->content(), 'fake-head-asset.js'),
+            'an @assets asset not baked into the cached shell must be injected on the hit',
+        );
+        $this->assertSame(
+            1,
+            $this->countLivewireScriptTags($hit->content()),
+            'baked Livewire scripts must not be duplicated while injecting new @assets',
+        );
+        $this->assertSame(
+            1,
+            $this->countLivewireStyleBlocks($hit->content()),
+            'baked Livewire styles must not be duplicated while injecting new @assets',
+        );
+    }
+
+    #[Test]
+    public function gated_component_rendered_on_both_warming_and_hit_stays_deduplicated(): void
+    {
+        $this->configureScenario('half', true);
+        StaticCache::flush();
+
+        StaticCachingGate::$component = 'assets-counter';
+
+        $miss = $this->get('/gated-page');
+        $miss->assertOk();
+        $this->assertSame(1, $this->countLivewireScriptTags($miss->content()));
+        $this->assertSame(1, substr_count($miss->content(), 'fake-head-asset.js'));
+
+        $this->resetState();
+        $this->configureScenario('half', true);
+
+        $hit = $this->get('/gated-page');
+        $hit->assertOk();
+        $this->assertSame(
+            ResponseStatus::HIT,
+            $hit->baseResponse->staticCacheResponseStatus(),
+            'expected second request to be served from cache',
+        );
+        $this->assertSame(
+            1,
+            $this->countLivewireScriptTags($hit->content()),
+            'script tag count drifted between cache miss and hit',
+        );
+        $this->assertSame(
+            1,
+            $this->countLivewireStyleBlocks($hit->content()),
+            'style block count drifted between cache miss and hit',
+        );
+        $this->assertSame(
+            1,
+            substr_count($hit->content(), 'fake-head-asset.js'),
+            '@assets head asset got duplicated on cache hit',
+        );
+    }
+
     #[Test]
     public function assets_are_still_injected_on_fresh_non_cacheable_responses(): void
     {
@@ -249,10 +433,8 @@ class DuplicateAssetInjectionTest extends TestCase
     }
 
     /**
-     * ApplicationCacher (half measure) caches 404s too — think a custom 404
-     * page with a Livewire search component. The cached status must survive
-     * the hit and the manual asset tags must not drift (Livewire skips auto
-     * injection on non-200 responses, so manual tags are the realistic setup).
+     * Half measure caches 404s too; the cached status and manual asset tags
+     * must survive the hit.
      */
     #[Test]
     public function cached_404_pages_keep_their_status_and_asset_tags_on_cache_hit(): void
@@ -291,12 +473,8 @@ class DuplicateAssetInjectionTest extends TestCase
     }
 
     /**
-     * Statamic's recache flow re-requests cached URLs with a recache token to
-     * refresh them. Those requests bypass the cached page and must be served
-     * fresh with assets injected normally. The bypass is enforced by the
-     * middleware's canBeCached() — recache responses take the re-cache path
-     * where replaceInCachedResponse() never runs — so this pins the
-     * end-to-end behavior rather than the replacer's own recache guard.
+     * Recache-token requests bypass the cached page and must be served
+     * fresh with assets injected normally.
      */
     #[Test]
     public function recache_token_requests_are_served_fresh_with_assets_injected(): void
@@ -330,11 +508,7 @@ class DuplicateAssetInjectionTest extends TestCase
     }
 
     /**
-     * Draft responses (e.g. Live Preview of an unpublished entry) carry the
-     * X-Statamic-Draft header, are never cached, and must keep normal asset
-     * injection on every request. Since drafts never enter the cache, the
-     * operative guard is the replacer's final hasCachedPage() check (the
-     * header branch is defense in depth) — this pins the end-to-end behavior.
+     * Draft responses are never cached and must keep normal asset injection.
      */
     #[Test]
     public function draft_responses_are_never_cached_and_keep_injected_assets(): void

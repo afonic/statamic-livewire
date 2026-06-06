@@ -12,16 +12,13 @@ use Statamic\Statamic;
 use Statamic\StaticCaching\Cacher;
 use Statamic\StaticCaching\Cachers\FileCacher;
 use Statamic\StaticCaching\Replacer;
-use Statamic\StaticCaching\Replacers\NoCacheReplacer;
 
 /**
- * On a half-measure cache hit, re-rendering the nocache regions re-arms
- * Livewire's auto asset injection (RequestHandled fires after Statamic's
- * middleware), duplicating the asset tags already in the cached HTML. This
- * replacer suppresses that — it must run after NoCacheReplacer, so the
- * service provider appends it last.
+ * On half-measure cache hits, the nocache region re-render re-arms
+ * Livewire's auto asset injection. Suppresses only assets already present
+ * in the served content. Must run after NoCacheReplacer.
  *
- * @see NoCacheReplacer::replaceInCachedResponse()
+ * @see SupportAutoInjectedAssets
  * @see AssetsReplacer::prepareResponseToCache()
  */
 class SuppressAssetsInjectionReplacer implements Replacer
@@ -32,9 +29,9 @@ class SuppressAssetsInjectionReplacer implements Replacer
     }
 
     /**
-     * Full measure swaps its regions client-side, so nothing arms the
-     * injection there. Fresh non-cacheable responses also pass through here
-     * and still need normal injection — isServingFromCache() screens them out.
+     * Marks already-served scripts/styles as rendered and drops baked
+     * `@assets`, leaving Livewire's RequestHandled listener only what is
+     * genuinely missing from the shell.
      */
     public function replaceInCachedResponse(Response $response): void
     {
@@ -48,23 +45,73 @@ class SuppressAssetsInjectionReplacer implements Replacer
             return;
         }
 
-        SupportAutoInjectedAssets::$hasRenderedAComponentThisRequest = false;
-        app(FrontendAssets::class)->hasRenderedScripts = true;
-        app(FrontendAssets::class)->hasRenderedStyles = true;
+        $content = (string) $response->getContent();
 
-        // `@assets` re-collected by the region re-render are already in the
-        // cached HTML and are not gated by the flags above.
-        SupportScriptsAndAssets::$renderedAssets = [];
+        if ($this->containsLivewireScripts($content)) {
+            app(FrontendAssets::class)->hasRenderedScripts = true;
+        }
+
+        if ($this->containsLivewireStyles($content)) {
+            app(FrontendAssets::class)->hasRenderedStyles = true;
+        }
+
+        SupportScriptsAndAssets::$renderedAssets = $this->withoutAssetsBakedIntoContent(
+            SupportScriptsAndAssets::$renderedAssets,
+            $content,
+        );
 
         if (property_exists(SupportScriptsAndAssets::class, 'nonLivewireAssets')) {
-            SupportScriptsAndAssets::$nonLivewireAssets = [];
+            SupportScriptsAndAssets::$nonLivewireAssets = $this->withoutAssetsBakedIntoContent(
+                SupportScriptsAndAssets::$nonLivewireAssets,
+                $content,
+            );
         }
     }
 
     /**
-     * Mirrors the middleware's canBeCached()/shouldBeCached() so suppression
-     * only fires on the cache-hit path; hasCachedPage() is the authoritative
-     * signal. Keep in sync when upgrading statamic/cms.
+     * Matches the injected script tag and `@livewireScriptConfig` setups.
+     */
+    protected function containsLivewireScripts(string $content): bool
+    {
+        return str_contains($content, 'data-update-uri')
+            || str_contains($content, 'window.livewireScriptConfig');
+    }
+
+    /**
+     * The selector marker survives comment-stripping minifiers.
+     */
+    protected function containsLivewireStyles(string $content): bool
+    {
+        return str_contains($content, '<!-- Livewire Styles -->')
+            || str_contains($content, '[wire\:loading]');
+    }
+
+    /**
+     * Drops assets already baked into the served content, nonce-stripped on
+     * both sides so per-request CSP nonces can't defeat the comparison.
+     *
+     * @param  array<string, string>  $assets
+     * @return array<string, string>
+     */
+    protected function withoutAssetsBakedIntoContent(array $assets, string $content): array
+    {
+        $normalizedContent = $this->stripNonces($content);
+
+        return array_filter($assets, function ($asset) use ($normalizedContent): bool {
+            $asset = trim($this->stripNonces((string) $asset));
+
+            return $asset !== '' && ! str_contains($normalizedContent, $asset);
+        });
+    }
+
+    protected function stripNonces(string $html): string
+    {
+        return preg_replace('/\snonce="[^"]*"/', '', $html) ?? $html;
+    }
+
+    /**
+     * Mirrors the middleware's canBeCached()/shouldBeCached(); keep in sync
+     * when upgrading statamic/cms.
      */
     protected function isServingFromCache(Cacher $cacher, Request $request, Response $response): bool
     {
