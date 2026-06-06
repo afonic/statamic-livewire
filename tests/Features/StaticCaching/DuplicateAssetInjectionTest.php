@@ -3,8 +3,8 @@
 namespace MarcoRieser\Livewire\Tests\Features\StaticCaching;
 
 use Illuminate\Filesystem\Filesystem;
-use Livewire\Features\SupportScriptsAndAssets\SupportScriptsAndAssets;
 use Livewire\Livewire;
+use MarcoRieser\Livewire\Tests\Concerns\CanSimulateStaticCachingRequests;
 use MarcoRieser\Livewire\Tests\Fixtures\Livewire\AssetsCounter;
 use MarcoRieser\Livewire\Tests\Fixtures\Livewire\StaticCachingCounter;
 use MarcoRieser\Livewire\Tests\Fixtures\Tags\StaticCachingGate;
@@ -18,6 +18,8 @@ use Statamic\StaticCaching\StaticCacheManager;
 
 class DuplicateAssetInjectionTest extends TestCase
 {
+    use CanSimulateStaticCachingRequests;
+
     private string $fileCachePath;
 
     protected function defineEnvironment($app): void
@@ -75,7 +77,7 @@ class DuplicateAssetInjectionTest extends TestCase
 
         StaticCachingGate::register();
 
-        $this->resetState();
+        $this->resetStateBetweenRequests();
     }
 
     protected function tearDown(): void
@@ -141,7 +143,7 @@ class DuplicateAssetInjectionTest extends TestCase
             'unexpected style block count on cache miss',
         );
 
-        $this->resetState();
+        $this->resetStateBetweenRequests();
         $this->configureScenario($strategy, $injectAssets);
 
         $hit = $this->get($url);
@@ -180,7 +182,7 @@ class DuplicateAssetInjectionTest extends TestCase
         $miss->assertOk();
         $this->assertSame(0, $this->countLivewireScriptTags($miss->content()));
 
-        $this->resetState();
+        $this->resetStateBetweenRequests();
         $this->configureScenario('full', true);
 
         $hit = $this->get($url);
@@ -207,7 +209,7 @@ class DuplicateAssetInjectionTest extends TestCase
             'expected the @assets asset exactly once on cache miss',
         );
 
-        $this->resetState();
+        $this->resetStateBetweenRequests();
         $this->configureScenario('half', true);
 
         $hit = $this->get('/assets-page');
@@ -244,7 +246,7 @@ class DuplicateAssetInjectionTest extends TestCase
             'expected no Livewire assets on the warming response without a component',
         );
 
-        $this->resetState();
+        $this->resetStateBetweenRequests();
         $this->configureScenario('half', true);
 
         StaticCachingGate::$component = 'static-caching-counter';
@@ -289,7 +291,7 @@ class DuplicateAssetInjectionTest extends TestCase
             'expected no @assets asset on the warming response without a component',
         );
 
-        $this->resetState();
+        $this->resetStateBetweenRequests();
         $this->configureScenario('half', true);
 
         StaticCachingGate::$component = 'assets-counter';
@@ -330,7 +332,7 @@ class DuplicateAssetInjectionTest extends TestCase
             'the warming component must not collect the @assets asset',
         );
 
-        $this->resetState();
+        $this->resetStateBetweenRequests();
         $this->configureScenario('half', true);
 
         StaticCachingGate::$component = 'assets-counter';
@@ -372,7 +374,7 @@ class DuplicateAssetInjectionTest extends TestCase
         $this->assertSame(1, $this->countLivewireScriptTags($miss->content()));
         $this->assertSame(1, substr_count($miss->content(), 'fake-head-asset.js'));
 
-        $this->resetState();
+        $this->resetStateBetweenRequests();
         $this->configureScenario('half', true);
 
         $hit = $this->get('/gated-page');
@@ -416,7 +418,7 @@ class DuplicateAssetInjectionTest extends TestCase
             'expected Livewire assets on the first request to an excluded URL',
         );
 
-        $this->resetState();
+        $this->resetStateBetweenRequests();
         $this->configureScenario('half', true);
 
         $second = $this->get($url);
@@ -451,7 +453,7 @@ class DuplicateAssetInjectionTest extends TestCase
             'expected exactly one manual script tag on the fresh 404',
         );
 
-        $this->resetState();
+        $this->resetStateBetweenRequests();
         $this->configureScenario('half', true);
 
         $hit = $this->get('/missing-page');
@@ -489,7 +491,7 @@ class DuplicateAssetInjectionTest extends TestCase
         $miss->assertOk();
         $this->assertSame(1, $this->countLivewireScriptTags($miss->content()));
 
-        $this->resetState();
+        $this->resetStateBetweenRequests();
         $this->configureScenario('half', true);
 
         $recache = $this->get($url.'&'.http_build_query([
@@ -521,7 +523,7 @@ class DuplicateAssetInjectionTest extends TestCase
         $first->assertOk();
         $this->assertSame(1, $this->countLivewireScriptTags($first->content()));
 
-        $this->resetState();
+        $this->resetStateBetweenRequests();
         $this->configureScenario('half', true);
 
         $second = $this->get('/draft-page');
@@ -538,34 +540,10 @@ class DuplicateAssetInjectionTest extends TestCase
         );
     }
 
-    private function countLivewireScriptTags(string $content): int
-    {
-        return (int) preg_match_all('/livewire(?:\.min)?\.js\?id=/', $content);
-    }
-
-    private function countLivewireStyleBlocks(string $content): int
-    {
-        return substr_count($content, '<!-- Livewire Styles -->');
-    }
-
     private function configureScenario(string $strategy, bool $injectAssets): void
     {
         config()->set('statamic.static_caching.strategy', $strategy);
         config()->set('livewire.inject_assets', $injectAssets);
-
-        app()->forgetInstance(StaticCacheManager::class);
-    }
-
-    private function resetState(): void
-    {
-        Livewire::flushState();
-
-        SupportScriptsAndAssets::$alreadyRunAssetKeys = [];
-        SupportScriptsAndAssets::$renderedAssets = [];
-
-        if (property_exists(SupportScriptsAndAssets::class, 'nonLivewireAssets')) {
-            SupportScriptsAndAssets::$nonLivewireAssets = [];
-        }
 
         app()->forgetInstance(StaticCacheManager::class);
     }

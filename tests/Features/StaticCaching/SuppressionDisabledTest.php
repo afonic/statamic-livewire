@@ -2,9 +2,9 @@
 
 namespace MarcoRieser\Livewire\Tests\Features\StaticCaching;
 
-use Livewire\Features\SupportScriptsAndAssets\SupportScriptsAndAssets;
 use Livewire\Livewire;
 use MarcoRieser\Livewire\Replacers\SuppressAssetsInjectionReplacer;
+use MarcoRieser\Livewire\Tests\Concerns\CanSimulateStaticCachingRequests;
 use MarcoRieser\Livewire\Tests\Fixtures\Livewire\StaticCachingCounter;
 use MarcoRieser\Livewire\Tests\TestCase;
 use PHPUnit\Framework\Attributes\Test;
@@ -14,6 +14,8 @@ use Statamic\StaticCaching\ResponseStatus;
 
 class SuppressionDisabledTest extends TestCase
 {
+    use CanSimulateStaticCachingRequests;
+
     protected function defineEnvironment($app): void
     {
         $app['config']->set('cache.default', 'array');
@@ -37,7 +39,7 @@ class SuppressionDisabledTest extends TestCase
 
         Livewire::component('static-caching-counter', StaticCachingCounter::class);
 
-        $this->resetLivewireState();
+        $this->resetStateBetweenRequests();
     }
 
     /**
@@ -58,7 +60,7 @@ class SuppressionDisabledTest extends TestCase
         $miss->assertOk();
         $this->assertSame(1, $this->countLivewireScriptTags($miss->content()));
 
-        $this->resetLivewireState();
+        $this->resetStateBetweenRequests();
 
         $hit = $this->get('/suppression-disabled-page');
         $hit->assertOk();
@@ -72,22 +74,5 @@ class SuppressionDisabledTest extends TestCase
             $this->countLivewireScriptTags($hit->content()),
             'expected the duplicate injection with suppression off',
         );
-    }
-
-    private function countLivewireScriptTags(string $content): int
-    {
-        return (int) preg_match_all('/livewire(?:\.min)?\.js\?id=/', $content);
-    }
-
-    private function resetLivewireState(): void
-    {
-        Livewire::flushState();
-
-        SupportScriptsAndAssets::$alreadyRunAssetKeys = [];
-        SupportScriptsAndAssets::$renderedAssets = [];
-
-        if (property_exists(SupportScriptsAndAssets::class, 'nonLivewireAssets')) {
-            SupportScriptsAndAssets::$nonLivewireAssets = [];
-        }
     }
 }

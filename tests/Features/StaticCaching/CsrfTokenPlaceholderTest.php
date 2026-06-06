@@ -3,8 +3,8 @@
 namespace MarcoRieser\Livewire\Tests\Features\StaticCaching;
 
 use Illuminate\Filesystem\Filesystem;
-use Livewire\Features\SupportScriptsAndAssets\SupportScriptsAndAssets;
 use Livewire\Livewire;
+use MarcoRieser\Livewire\Tests\Concerns\CanSimulateStaticCachingRequests;
 use MarcoRieser\Livewire\Tests\Fixtures\Livewire\StaticCachingCounter;
 use MarcoRieser\Livewire\Tests\TestCase;
 use PHPUnit\Framework\Attributes\Test;
@@ -20,6 +20,8 @@ use Statamic\StaticCaching\StaticCacheManager;
  */
 class CsrfTokenPlaceholderTest extends TestCase
 {
+    use CanSimulateStaticCachingRequests;
+
     private string $fileCachePath;
 
     protected function defineEnvironment($app): void
@@ -98,7 +100,7 @@ class CsrfTokenPlaceholderTest extends TestCase
 
         $this->get('/csrf-page?nocache=1')->assertOk();
 
-        $this->resetState();
+        $this->resetStateBetweenRequests();
         $this->configureStrategy('half');
 
         session()->regenerateToken();
@@ -124,20 +126,6 @@ class CsrfTokenPlaceholderTest extends TestCase
     private function configureStrategy(string $strategy): void
     {
         config()->set('statamic.static_caching.strategy', $strategy);
-
-        app()->forgetInstance(StaticCacheManager::class);
-    }
-
-    private function resetState(): void
-    {
-        Livewire::flushState();
-
-        SupportScriptsAndAssets::$alreadyRunAssetKeys = [];
-        SupportScriptsAndAssets::$renderedAssets = [];
-
-        if (property_exists(SupportScriptsAndAssets::class, 'nonLivewireAssets')) {
-            SupportScriptsAndAssets::$nonLivewireAssets = [];
-        }
 
         app()->forgetInstance(StaticCacheManager::class);
     }

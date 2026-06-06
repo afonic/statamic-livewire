@@ -5,6 +5,7 @@ namespace MarcoRieser\Livewire\Tests\Features\StaticCaching;
 use MarcoRieser\Livewire\Replacers\AssetsReplacer;
 use MarcoRieser\Livewire\Replacers\SuppressAssetsInjectionReplacer;
 use MarcoRieser\Livewire\ServiceProvider;
+use MarcoRieser\Livewire\Tests\Fixtures\Replacers\CustomSuppressionReplacer;
 use MarcoRieser\Livewire\Tests\TestCase;
 use PHPUnit\Framework\Attributes\Test;
 use ReflectionMethod;
@@ -60,6 +61,41 @@ class ReplacerRegistrationTest extends TestCase
         config()->set('statamic-livewire.static_caching.suppress_duplicate_assets', false);
         $bootReplacers->invoke($provider);
         $this->assertNotContains(SuppressAssetsInjectionReplacer::class, config('statamic.static_caching.replacers'));
+    }
+
+    /**
+     * Subclasses are treated like the suppression replacer itself: they get
+     * repositioned to the end (without adding the base class alongside) and
+     * removed when suppression is disabled.
+     */
+    #[Test]
+    public function subclassed_suppression_replacers_are_repositioned_last_when_enabled(): void
+    {
+        config()->set('statamic-livewire.static_caching.suppress_duplicate_assets', true);
+        config()->set('statamic.static_caching.replacers', [
+            CustomSuppressionReplacer::class,
+            ...config('statamic.static_caching.replacers'),
+        ]);
+
+        $provider = $this->app->getProvider(ServiceProvider::class);
+        $bootReplacers = new ReflectionMethod($provider, 'bootReplacers');
+
+        $bootReplacers->invoke($provider);
+
+        $replacers = config('statamic.static_caching.replacers');
+
+        $this->assertSame(NoCacheReplacer::class, $replacers[0]);
+        $this->assertSame(CustomSuppressionReplacer::class, end($replacers), 'a subclassed suppression replacer must be repositioned to run last');
+        $this->assertNotContains(SuppressAssetsInjectionReplacer::class, $replacers, 'the base replacer must not be appended when a subclass is registered');
+
+        config()->set('statamic-livewire.static_caching.suppress_duplicate_assets', false);
+        $bootReplacers->invoke($provider);
+
+        $this->assertNotContains(
+            CustomSuppressionReplacer::class,
+            config('statamic.static_caching.replacers'),
+            'disabling suppression must also remove subclassed suppression replacers',
+        );
     }
 
     /**
