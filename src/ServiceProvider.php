@@ -61,8 +61,8 @@ class ServiceProvider extends AddonServiceProvider
     {
         /**
          * Order matters: NoCacheReplacer first, then the addon replacers, then
-         * the suppression replacer last (when enabled). array_unique keeps the
-         * merge idempotent across config:cache re-runs.
+         * the suppression replacers (including subclasses) last when enabled.
+         * array_unique keeps the merge idempotent across config:cache re-runs.
          */
         $statamicReplacers = config()->array('statamic.static_caching.replacers', []);
 
@@ -73,17 +73,22 @@ class ServiceProvider extends AddonServiceProvider
             fn (string $replacer) => is_a($replacer, NoCacheReplacer::class, true),
         ));
 
+        $suppressionReplacers = array_values(array_filter(
+            $statamicReplacers,
+            fn (string $replacer) => is_a($replacer, SuppressAssetsInjectionReplacer::class, true),
+        ));
+
         $remainingReplacers = array_values(array_filter(
             $statamicReplacers,
             fn (string $replacer) => ! is_a($replacer, NoCacheReplacer::class, true)
-                && $replacer !== SuppressAssetsInjectionReplacer::class,
+                && ! is_a($replacer, SuppressAssetsInjectionReplacer::class, true),
         ));
 
         config()->set('statamic.static_caching.replacers', array_values(array_unique(array_merge(
             $noCacheReplacers,
             config()->array('statamic-livewire.replacers', []),
             $remainingReplacers,
-            $suppressDuplicateAssets ? [SuppressAssetsInjectionReplacer::class] : [],
+            $suppressDuplicateAssets ? ($suppressionReplacers ?: [SuppressAssetsInjectionReplacer::class]) : [],
         ))));
     }
 
