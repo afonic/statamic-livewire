@@ -147,6 +147,14 @@ This addon adds an `AssetsReplacer` class to make Livewire compatible with half 
 ],
 ```
 
+On half measure cache hits, Livewire's asset injection can duplicate asset tags that are already baked into the cached response. You can opt in to suppressing the injection of assets that are already present in the served content:
+
+```php
+'static_caching' => [
+    'suppress_duplicate_assets' => true,
+],
+```
+
 If you are using full measure static caching, and you're manually bundling Livewire and Alpine as per the instructions above, you need to make sure to only start Livewire once the CSRF token has been replaced.
 
 ```js

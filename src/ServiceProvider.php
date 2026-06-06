@@ -61,10 +61,12 @@ class ServiceProvider extends AddonServiceProvider
     {
         /**
          * Order matters: NoCacheReplacer first, then the addon replacers, then
-         * the suppression replacer last. array_unique keeps the merge
-         * idempotent across config:cache re-runs.
+         * the suppression replacer last (when enabled). array_unique keeps the
+         * merge idempotent across config:cache re-runs.
          */
         $statamicReplacers = config()->array('statamic.static_caching.replacers', []);
+
+        $suppressDuplicateAssets = config()->boolean('statamic-livewire.static_caching.suppress_duplicate_assets', false);
 
         $noCacheReplacers = array_values(array_filter(
             $statamicReplacers,
@@ -73,14 +75,15 @@ class ServiceProvider extends AddonServiceProvider
 
         $remainingReplacers = array_values(array_filter(
             $statamicReplacers,
-            fn (string $replacer) => ! is_a($replacer, NoCacheReplacer::class, true),
+            fn (string $replacer) => ! is_a($replacer, NoCacheReplacer::class, true)
+                && $replacer !== SuppressAssetsInjectionReplacer::class,
         ));
 
         config()->set('statamic.static_caching.replacers', array_values(array_unique(array_merge(
             $noCacheReplacers,
             config()->array('statamic-livewire.replacers', []),
             $remainingReplacers,
-            [SuppressAssetsInjectionReplacer::class],
+            $suppressDuplicateAssets ? [SuppressAssetsInjectionReplacer::class] : [],
         ))));
     }
 

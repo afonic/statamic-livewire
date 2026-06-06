@@ -26,6 +26,7 @@ class DuplicateAssetInjectionTest extends TestCase
 
         $app['config']->set('statamic.static_caching.strategies.full.path', $this->fileCachePath);
         $app['config']->set('cache.default', 'array');
+        $app['config']->set('statamic-livewire.static_caching.suppress_duplicate_assets', true);
     }
 
     protected function defineRoutes($router): void

@@ -22,7 +22,7 @@ class ReplacerRegistrationTest extends TestCase
         $csrfPosition = array_search(CsrfTokenReplacer::class, $replacers, true);
 
         $this->assertSame(NoCacheReplacer::class, $replacers[0], 'NoCacheReplacer must run first so nocache regions are rendered before assets are baked');
-        $this->assertSame(SuppressAssetsInjectionReplacer::class, end($replacers), 'SuppressAssetsInjectionReplacer must run last, after the regions have re-rendered');
+        $this->assertNotContains(SuppressAssetsInjectionReplacer::class, $replacers, 'asset suppression is opt-in and must not register by default');
         $this->assertIsInt($assetsPosition, 'AssetsReplacer must be registered');
         $this->assertIsInt($csrfPosition, 'CsrfTokenReplacer must be registered');
         $this->assertLessThan(
@@ -31,6 +31,35 @@ class ReplacerRegistrationTest extends TestCase
             'AssetsReplacer must run before CsrfTokenReplacer so baked tags get their CSRF token placeholdered',
         );
         $this->assertSame($replacers, array_values(array_unique($replacers)), 'replacers must not contain duplicates');
+    }
+
+    #[Test]
+    public function suppression_replacer_is_registered_last_when_enabled(): void
+    {
+        config()->set('statamic-livewire.static_caching.suppress_duplicate_assets', true);
+
+        $provider = $this->app->getProvider(ServiceProvider::class);
+        (new ReflectionMethod($provider, 'bootReplacers'))->invoke($provider);
+
+        $replacers = config('statamic.static_caching.replacers');
+
+        $this->assertSame(SuppressAssetsInjectionReplacer::class, end($replacers), 'SuppressAssetsInjectionReplacer must run last, after the regions have re-rendered');
+        $this->assertSame(NoCacheReplacer::class, $replacers[0]);
+    }
+
+    #[Test]
+    public function disabling_suppression_removes_an_already_registered_replacer(): void
+    {
+        $provider = $this->app->getProvider(ServiceProvider::class);
+        $bootReplacers = new ReflectionMethod($provider, 'bootReplacers');
+
+        config()->set('statamic-livewire.static_caching.suppress_duplicate_assets', true);
+        $bootReplacers->invoke($provider);
+        $this->assertContains(SuppressAssetsInjectionReplacer::class, config('statamic.static_caching.replacers'));
+
+        config()->set('statamic-livewire.static_caching.suppress_duplicate_assets', false);
+        $bootReplacers->invoke($provider);
+        $this->assertNotContains(SuppressAssetsInjectionReplacer::class, config('statamic.static_caching.replacers'));
     }
 
     /**

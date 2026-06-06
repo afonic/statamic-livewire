@@ -54,4 +54,20 @@ return [
     'replacers' => [
         \MarcoRieser\Livewire\Replacers\AssetsReplacer::class,
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Static Caching
+    |--------------------------------------------------------------------------
+    |
+    | On half measure cache hits, Livewire's asset injection can duplicate
+    | asset tags already baked into the cached response. Enable this to
+    | suppress the injection of assets that are already present in the
+    | served content.
+    |
+    */
+
+    'static_caching' => [
+        'suppress_duplicate_assets' => false,
+    ],
 ];
