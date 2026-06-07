@@ -99,6 +99,50 @@ class ReplacerRegistrationTest extends TestCase
     }
 
     /**
+     * The addon's `statamic-livewire.replacers` list is the documented
+     * customization point; suppression subclasses registered there get the
+     * same treatment as ones in the statamic config.
+     */
+    #[Test]
+    public function suppression_subclasses_in_the_addon_replacer_list_are_positioned_last_when_enabled(): void
+    {
+        config()->set('statamic-livewire.static_caching.suppress_duplicate_assets', true);
+        config()->set('statamic-livewire.replacers', [
+            CustomSuppressionReplacer::class,
+            AssetsReplacer::class,
+        ]);
+
+        $provider = $this->app->getProvider(ServiceProvider::class);
+        $bootReplacers = new ReflectionMethod($provider, 'bootReplacers');
+
+        $bootReplacers->invoke($provider);
+
+        $replacers = config('statamic.static_caching.replacers');
+
+        $assetsPosition = array_search(AssetsReplacer::class, $replacers, true);
+        $csrfPosition = array_search(CsrfTokenReplacer::class, $replacers, true);
+
+        $this->assertSame(NoCacheReplacer::class, $replacers[0]);
+        $this->assertSame(CustomSuppressionReplacer::class, end($replacers), 'a suppression subclass from the addon config must be repositioned to run last');
+        $this->assertNotContains(SuppressAssetsInjectionReplacer::class, $replacers, 'the base replacer must not be appended when a subclass is registered');
+        $this->assertIsInt($assetsPosition);
+        $this->assertIsInt($csrfPosition);
+        $this->assertLessThan($csrfPosition, $assetsPosition, 'AssetsReplacer must keep running before CsrfTokenReplacer');
+
+        $bootReplacers->invoke($provider);
+        $this->assertSame($replacers, config('statamic.static_caching.replacers'), 'rebooting on the merged config must not change it');
+
+        config()->set('statamic-livewire.static_caching.suppress_duplicate_assets', false);
+        $bootReplacers->invoke($provider);
+
+        $this->assertNotContains(
+            CustomSuppressionReplacer::class,
+            config('statamic.static_caching.replacers'),
+            'disabling suppression must also remove suppression subclasses registered in the addon config',
+        );
+    }
+
+    /**
      * `php artisan config:cache` boots the app (running bootReplacers()) and
      * dumps the mutated config, so on the next boot bootReplacers() re-runs
      * on its own output. Re-applying it must not accumulate duplicates.

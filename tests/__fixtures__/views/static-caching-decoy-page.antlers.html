@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Static Caching Decoy Test</title>
+</head>
+<body>
+    <p>Add the tag manually: <code>&lt;script data-csrf="token" data-update-uri="/livewire/update"&gt;&lt;/script&gt;</code></p>
+    <p>Or configure it yourself: <code>window.livewireScriptConfig = { csrf: 'token' };</code></p>
+    <p>Hide elements while loading: <code>[wire\:loading] { display: none; }</code></p>
+    <div data-update-uri="/api/refresh"></div>
+    {{ nocache }}{{ static_caching_gate }}{{ /nocache }}
+</body>
+</html>

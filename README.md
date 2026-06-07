@@ -157,6 +157,8 @@ On half measure cache hits, Livewire's asset injection can duplicate asset tags 
 
 Already-present assets are detected with an exact string comparison (CSP nonces aside). If the cached HTML is transformed after it was stored — for example by a minifying replacer or whitespace normalization — the comparison may no longer match and duplicate tags can reappear.
 
+To customize the suppression behavior, register a subclass of `SuppressAssetsInjectionReplacer` in the `replacers` config above. It replaces the built-in one, always runs last, and is only active while `suppress_duplicate_assets` is enabled.
+
 If you are using full measure static caching, and you're manually bundling Livewire and Alpine as per the instructions above, you need to make sure to only start Livewire once the CSRF token has been replaced.
 
 ```js

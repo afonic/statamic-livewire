@@ -70,20 +70,23 @@ class SuppressAssetsInjectionReplacer implements Replacer
 
     /**
      * Matches the injected script tag and `@livewireScriptConfig` setups.
+     * Anchored to real tags so escaped code samples or unrelated attributes
+     * in the shell don't suppress a genuinely missing script.
      */
     protected function containsLivewireScripts(string $content): bool
     {
-        return str_contains($content, 'data-update-uri')
-            || str_contains($content, 'window.livewireScriptConfig');
+        return preg_match('/<script\b[^>]*\sdata-update-uri=/i', $content) === 1
+            || preg_match('/<script\b[^>]*>[^<]*window\.livewireScriptConfig/i', $content) === 1;
     }
 
     /**
-     * The selector marker survives comment-stripping minifiers.
+     * The selector fallback survives comment-stripping minifiers and is
+     * anchored to a real style tag for the same reason as the scripts.
      */
     protected function containsLivewireStyles(string $content): bool
     {
         return str_contains($content, '<!-- Livewire Styles -->')
-            || str_contains($content, '[wire\:loading]');
+            || preg_match('/<style\b[^>]*>[^<]*\[wire\\\\:loading\]/i', $content) === 1;
     }
 
     /**

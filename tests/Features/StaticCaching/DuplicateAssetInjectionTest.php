@@ -51,6 +51,10 @@ class DuplicateAssetInjectionTest extends TestCase
             return view('static-caching-gated-page')->render();
         })->middleware(StaticCacheMiddleware::class);
 
+        $router->get('/decoy-page', function () {
+            return view('static-caching-decoy-page')->render();
+        })->middleware(StaticCacheMiddleware::class);
+
         $router->get('/missing-page', function () {
             return response(view('static-caching-page', [
                 'has_nocache' => true,
@@ -272,6 +276,61 @@ class DuplicateAssetInjectionTest extends TestCase
             1,
             $this->countLivewireStyleBlocks($hit->content()),
             'Livewire styles must be injected when the cached shell does not contain them',
+        );
+    }
+
+    /**
+     * Detection must match real tags only: escaped code samples or unrelated
+     * attributes that merely contain the marker substrings must not suppress
+     * the injection for a component first rendered on the hit.
+     */
+    #[Test]
+    public function decoy_markers_in_the_cached_shell_do_not_suppress_injection(): void
+    {
+        $this->configureScenario('half', true);
+        StaticCache::flush();
+
+        StaticCachingGate::$component = null;
+
+        $miss = $this->get('/decoy-page');
+        $miss->assertOk();
+        $this->assertStringContainsString(
+            'data-update-uri',
+            $miss->content(),
+            'expected the decoy markers to be part of the cached shell',
+        );
+        $this->assertSame(
+            0,
+            $this->countLivewireScriptTags($miss->content()),
+            'expected no Livewire assets on the warming response without a component',
+        );
+
+        $this->resetStateBetweenRequests();
+        $this->configureScenario('half', true);
+
+        StaticCachingGate::$component = 'static-caching-counter';
+
+        $hit = $this->get('/decoy-page');
+        $hit->assertOk();
+        $this->assertSame(
+            ResponseStatus::HIT,
+            $hit->baseResponse->staticCacheResponseStatus(),
+            'expected second request to be served from cache',
+        );
+        $this->assertStringContainsString(
+            'wire:id',
+            $hit->content(),
+            'expected the gated component to render inside the nocache region',
+        );
+        $this->assertSame(
+            1,
+            $this->countLivewireScriptTags($hit->content()),
+            'decoy markers in the shell must not suppress the script injection',
+        );
+        $this->assertSame(
+            1,
+            $this->countLivewireStyleBlocks($hit->content()),
+            'decoy markers in the shell must not suppress the style injection',
         );
     }
 

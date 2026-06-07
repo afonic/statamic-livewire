@@ -62,34 +62,43 @@ class ServiceProvider extends AddonServiceProvider
         /**
          * Order matters: NoCacheReplacer first, then the addon replacers, then
          * the suppression replacers (including subclasses) last when enabled.
-         * array_unique keeps the merge idempotent across config:cache re-runs.
+         * Both config lists get partitioned so suppression replacers run last
+         * no matter where they were registered. array_unique keeps the merge
+         * idempotent across config:cache re-runs.
          */
-        $statamicReplacers = config()->array('statamic.static_caching.replacers', []);
+        $statamicReplacers = $this->partitionReplacers(config()->array('statamic.static_caching.replacers', []));
+        $addonReplacers = $this->partitionReplacers(config()->array('statamic-livewire.replacers', []));
 
         $suppressDuplicateAssets = config()->boolean('statamic-livewire.static_caching.suppress_duplicate_assets', false);
 
-        $noCacheReplacers = array_values(array_filter(
-            $statamicReplacers,
-            fn (string $replacer) => is_a($replacer, NoCacheReplacer::class, true),
-        ));
-
-        $suppressionReplacers = array_values(array_filter(
-            $statamicReplacers,
-            fn (string $replacer) => is_a($replacer, SuppressAssetsInjectionReplacer::class, true),
-        ));
-
-        $remainingReplacers = array_values(array_filter(
-            $statamicReplacers,
-            fn (string $replacer) => ! is_a($replacer, NoCacheReplacer::class, true)
-                && ! is_a($replacer, SuppressAssetsInjectionReplacer::class, true),
-        ));
+        $suppressionReplacers = array_merge($statamicReplacers['suppression'], $addonReplacers['suppression']);
 
         config()->set('statamic.static_caching.replacers', array_values(array_unique(array_merge(
-            $noCacheReplacers,
-            config()->array('statamic-livewire.replacers', []),
-            $remainingReplacers,
+            $statamicReplacers['noCache'],
+            $addonReplacers['noCache'],
+            $addonReplacers['remaining'],
+            $statamicReplacers['remaining'],
             $suppressDuplicateAssets ? ($suppressionReplacers ?: [SuppressAssetsInjectionReplacer::class]) : [],
         ))));
+    }
+
+    /**
+     * @param  array<int, string>  $replacers
+     * @return array{noCache: array<int, string>, suppression: array<int, string>, remaining: array<int, string>}
+     */
+    protected function partitionReplacers(array $replacers): array
+    {
+        $isNoCache = fn (string $replacer): bool => is_a($replacer, NoCacheReplacer::class, true);
+        $isSuppression = fn (string $replacer): bool => is_a($replacer, SuppressAssetsInjectionReplacer::class, true);
+
+        return [
+            'noCache' => array_values(array_filter($replacers, $isNoCache)),
+            'suppression' => array_values(array_filter($replacers, $isSuppression)),
+            'remaining' => array_values(array_filter(
+                $replacers,
+                fn (string $replacer) => ! $isNoCache($replacer) && ! $isSuppression($replacer),
+            )),
+        ];
     }
 
     protected function bootSynthesizers(): void
