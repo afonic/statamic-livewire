@@ -19,6 +19,7 @@ A third-party [Laravel Livewire](https://laravel-livewire.com/) integration for 
     + [Computed Properties](#computed-properties)
     + [Cascade](#cascade)
     + [Multi-Site / Localization](#multi-site---localization)
+    + [Islands](#islands)
     + [Lazy Components](#lazy-components)
     + [Paginating Data](#paginating-data)
     + [Synthesizers](#synthesizers)
@@ -230,6 +231,47 @@ For subsequent requests, the addon restores the Cascade using the original Livew
 ### Multi-Site / Localization
 By default, your current site is persisted between Livewire requests automatically.  
 In case you want to implement your own logic, you can disable `localization` in your published `config/statamic-livewire.php` config.
+
+### Islands
+Livewire v4 [islands](https://livewire.laravel.com/docs/4.x/islands) let you isolate parts of a component view that update independently from the rest of the component. The Blade `@island` directive doesn't work in Antlers views, so the addon ships an Antlers implementation:
+
+```antlers
+{{ livewire:island name="stats" }}
+    <p>Count: {{ count }}</p>
+    <button wire:click="increment">+</button>
+{{ /livewire:island }}
+```
+
+Actions triggered from inside an island only re-render that island. Actions triggered outside skip islands entirely (pass `always="true"` to opt out). Islands can also be re-rendered from PHP with `$this->renderIsland('stats')` or streamed with `$this->streamIsland('stats')`, and updated in `append`/`prepend` mode from the frontend via `wire:click="$island('stats', { mode: 'append' })"` — the tag only controls the initial render. An empty pair (`{{ livewire:island name="logs" }}{{ /livewire:island }}`) renders an empty island that works as a target for streamed or appended content.
+
+The `lazy`, `defer` and `skip` modes are supported, together with a placeholder that is shown until the island content arrives:
+
+```antlers
+{{ livewire:island name="heavy" defer="true" }}
+    {{ placeholder }}
+        <p>Loading...</p>
+    {{ /placeholder }}
+    <p>{{ expensive_computed_property }}</p>
+{{ /livewire:island }}
+```
+
+Inside an island, the component's public properties, computed properties and (with the `#[Cascade]` attribute) the Cascade are available — just like in the component view itself. Variables from the surrounding template scope (e.g. loop variables) are not, mirroring how Blade islands behave — a value from the surrounding scope can be handed in explicitly with the `with` parameter instead:
+
+```antlers
+{{ livewire:island name="stats" :with="['greeting' => greeting]" }}
+    <p>{{ greeting }}</p>
+{{ /livewire:island }}
+```
+
+The `with` data is captured when the island is first rendered and reused for subsequent island renders — it travels inside the component's snapshot, so it survives view cache clears unchanged. As the snapshot is part of the rendered HTML, the captured values are readable in the browser: like public component properties (and the mount parameters of [lazy components](https://livewire.laravel.com/docs/lazy)), they are signed against tampering but not encrypted, so treat them as public and don't pass sensitive values. The captured values are dehydrated and rehydrated through Livewire's synthesizer pipeline, so the same serialization rules apply as for public component properties — dates, collections and (with the addon's [Synthesizers](#synthesizers) enabled) Statamic values survive the round trip, while unsupported types throw an exception. Data passed to `$this->renderIsland('stats', with: [...])` takes precedence over the captured values and is handed to the island live, without being serialized.
+
+A few things to keep in mind:
+
+- Don't place islands inside Antlers loops: every iteration produces its own island entry and cache file, and a changing iteration count shifts the render-order tokens, cross-wiring the islands' caches (`@island` inside `@foreach` is discouraged in Blade as well, where all iterations share one island).
+- Same-name islands in one view are told apart by render order; rendering them conditionally can cross-wire their caches. Islands in different views of the same component are kept separate.
+- Keep island names static (as they are in Blade, where `@island` names are literals): the name is part of the island's cache file identity, so a dynamic name creates one cache file per distinct value.
+- The component's `render()` method should stay free of side effects (as Livewire recommends): after the compiled view cache has been cleared, the addon re-renders the component view once to regenerate the island files.
+- `island` is now a reserved method on the `{{ livewire }}` tag: `{{ livewire:island }}` no longer mounts a component named `island` — mount it with `{{ livewire component="island" }}` instead.
 
 ### Lazy Components
 Livewire allows you to [lazy load components](https://livewire.laravel.com/docs/lazy) that would otherwise slow down the initial page load. For this you can simply pass `lazy="true"` as argument to your component tag.
