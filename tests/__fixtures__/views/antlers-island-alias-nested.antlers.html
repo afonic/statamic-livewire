@@ -1,0 +1,10 @@
+<div>
+    <p>Outside the islands</p>
+    {{ wire:island name="outer" }}
+        <p>Outer island content</p>
+        {{ lw:island name="inner" defer="true" }}
+            {{ placeholder }}<p>Loading inner...</p>{{ /placeholder }}
+            <p>Inner island content</p>
+        {{ /lw:island }}
+    {{ /wire:island }}
+</div>
