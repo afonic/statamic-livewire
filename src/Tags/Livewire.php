@@ -4,6 +4,8 @@ namespace MarcoRieser\Livewire\Tags;
 
 use Livewire\Features\SupportScriptsAndAssets\SupportScriptsAndAssets;
 use Livewire\Mechanisms\FrontendAssets\FrontendAssets;
+use MarcoRieser\Livewire\Exceptions\IslandException;
+use MarcoRieser\Livewire\Islands\IslandManager;
 use Statamic\Support\Str;
 use Statamic\Tags\Tags;
 
@@ -121,6 +123,51 @@ class Livewire extends Tags
         $key = md5($html);
 
         store($this->context['__livewire'])->push('scripts', $html, $key);
+    }
+
+    /**
+     * Antlers implementation of @island - https://livewire.laravel.com/docs/4.x/islands
+     *
+     * {{ livewire:island name="stats" }}...{{ /livewire:island }}
+     * {{ livewire:island name="stats" defer="true" }}...{{ /livewire:island }}
+     *
+     * Statamic parses an empty pair as a single tag, so single tags are
+     * accepted too and render an empty island (a stream target, for example).
+     */
+    public function island(): string
+    {
+        $name = $this->params->get('name');
+
+        throw_if($name === null || $name === '', new IslandException('The {{ livewire:island }} tag requires a name parameter.'));
+
+        throw_unless(is_scalar($name) && preg_match('/^[\w.\-]+$/', $name = (string) $name), new IslandException('The {{ livewire:island }} name may only contain letters, numbers, underscores, dashes and dots.'));
+
+        throw_unless($component = $this->context->value('__livewire'), new IslandException('The {{ livewire:island }} tag can only be used inside the Antlers view of a Livewire component.'));
+
+        throw_unless(method_exists($component, 'renderIslandDirective'), new IslandException('Islands require Livewire v4.'));
+
+        $with = $this->params->get('with') ?? [];
+
+        throw_unless(is_array($with), new IslandException('The with parameter of the {{ livewire:island }} tag has to be an array.'));
+
+        $token = app(IslandManager::class)->ensureIslandCacheFile($component, $name, (string) $this->content, $with);
+
+        $mounting = $component->islandIsMounting();
+
+        $html = $component->renderIslandDirective(
+            name: $name,
+            token: $token,
+            lazy: $this->params->bool('lazy'),
+            defer: $this->params->bool('defer'),
+            always: $this->params->bool('always'),
+            skip: $this->params->bool('skip'),
+        );
+
+        if ($mounting) {
+            app(IslandManager::class)->persistWithSnapshots($component);
+        }
+
+        return $html;
     }
 
     /**
