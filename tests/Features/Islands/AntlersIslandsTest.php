@@ -9,6 +9,7 @@ use Livewire\Attributes\Computed;
 use Livewire\Component;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
+use MarcoRieser\Livewire\Attributes\Cascade;
 use MarcoRieser\Livewire\Exceptions\IslandException;
 use MarcoRieser\Livewire\Islands\IslandRenderer;
 use MarcoRieser\Livewire\Islands\WithSnapshot;
@@ -444,6 +445,79 @@ class AntlersIslandsTest extends TestCase
 
         $this->assertCount(1, $fragments);
         $this->assertStringContainsString('Runtime World!', $fragments[0]);
+    }
+
+    /**
+     * Islands build their context through IslandRenderer instead of the render
+     * hooks, so cascade and computed availability is asserted on the mount
+     * render and on a PHP-triggered island render separately.
+     */
+    #[Test]
+    public function cascade_and_computed_properties_are_available_inside_islands()
+    {
+        $component = new
+        #[Cascade]
+        class extends Component
+        {
+            public function refreshStats(): void
+            {
+                $this->renderIsland('stats');
+            }
+
+            #[Computed]
+            public function label(): string
+            {
+                return 'Computed label';
+            }
+
+            public function render()
+            {
+                return view('antlers-island-cascade-computed');
+            }
+        };
+
+        Livewire::component('antlers-island-cascade-computed-component', $component::class);
+
+        $testable = Livewire::test('antlers-island-cascade-computed-component');
+
+        $testable->assertSee('Computed: Computed label');
+        $testable->assertSee('Environment: testing');
+
+        $testable->call('refreshStats');
+
+        $fragments = $testable->effects['islandFragments'] ?? [];
+
+        $this->assertCount(1, $fragments);
+        $this->assertStringContainsString('Computed: Computed label', $fragments[0]);
+        $this->assertStringContainsString('Environment: testing', $fragments[0]);
+    }
+
+    /**
+     * Captured "with" values land after computed properties in the island context.
+     */
+    #[Test]
+    public function directive_with_data_overrides_computed_properties_inside_islands()
+    {
+        $component = new class extends Component
+        {
+            #[Computed]
+            public function label(): string
+            {
+                return 'Computed label';
+            }
+
+            public function render()
+            {
+                return view('antlers-island-with-precedence');
+            }
+        };
+
+        Livewire::component('antlers-island-with-precedence-component', $component::class);
+
+        $testable = Livewire::test('antlers-island-with-precedence-component');
+
+        $testable->assertSee('Label: With label');
+        $testable->assertDontSee('Computed label');
     }
 
     #[Test]
