@@ -19,6 +19,8 @@ use function Livewire\wrap;
  */
 class AntlersIslandsRegenerator extends ComponentHook
 {
+    protected static bool $regenerating = false;
+
     /**
      * Each render pass registers its view and counts island occurrences from zero.
      */
@@ -30,31 +32,55 @@ class AntlersIslandsRegenerator extends ComponentHook
         );
     }
 
-    public function update($propertyName, $fullPath, $newValue): void
-    {
-        $this->regenerateMissingIslandCacheFiles();
-    }
-
-    public function call($method, $params, $returnEarly, $metadata): void
+    /**
+     * Fires right before Livewire renders an island view, so regeneration
+     * sees the state that island render is about to use — after incoming
+     * property updates and mid-method state changes.
+     */
+    public function renderIsland($name, $view, $properties): void
     {
         $this->regenerateMissingIslandCacheFiles();
     }
 
     /**
-     * Regeneration waits until update/call time: by then boot() and hydrate()
-     * have initialized the component, and every island render on subsequent
-     * requests is reached through a property update or a method call.
+     * Lazy islands mount through __lazyLoadIsland inside a window where the
+     * renderIsland hook has to stay inactive, so their cache files are
+     * ensured before that window opens.
+     */
+    public function call($method, $params, $returnEarly, $metadata): void
+    {
+        if ($method === '__lazyLoadIsland') {
+            $this->regenerateMissingIslandCacheFiles();
+        }
+    }
+
+    /**
+     * Skipped while islands mount (their tags just wrote the cache files and
+     * a regeneration render would re-store them) and while regenerating
+     * (replayed island renders re-enter through the renderIsland hook).
      */
     protected function regenerateMissingIslandCacheFiles(): void
     {
+        if (static::$regenerating || $this->component->islandIsMounting()) {
+            return;
+        }
+
         $islands = $this->component->getIslands();
 
         $missing = collect($islands)
             ->filter(fn (array $island) => str_starts_with($island['token'] ?? '', 'antlers-'))
             ->contains(fn (array $island) => ! file_exists(IslandCompiler::getCachedPathFromToken($island['token'])));
 
-        if ($missing) {
+        if (! $missing) {
+            return;
+        }
+
+        static::$regenerating = true;
+
+        try {
             $this->regenerateAntlersIslandCacheFiles($islands);
+        } finally {
+            static::$regenerating = false;
         }
     }
 

@@ -2,6 +2,7 @@
 
 namespace MarcoRieser\Livewire\Tests\Features\Islands;
 
+use Illuminate\Contracts\Filesystem\FileNotFoundException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\File;
 use Illuminate\View\ViewException;
@@ -263,6 +264,65 @@ class AntlersIslandsTest extends TestCase
 
         $this->assertCount(1, $fragments);
         $this->assertStringContainsString('Hello Statamic!', $fragments[0]);
+    }
+
+    /**
+     * Regeneration runs right before the island view renders, so it sees the
+     * state the request produced — not the one it arrived with.
+     */
+    #[Test]
+    public function islands_behind_conditions_enabled_by_the_incoming_update_are_regenerated()
+    {
+        $testable = $this->mountConditionalIslandComponent();
+
+        $testable->set('show', false);
+
+        File::deleteDirectory(app('livewire.compiler')->cacheManager->cacheDirectory.'/islands');
+        File::cleanDirectory(config('view.compiled'));
+
+        $testable->set('show', true);
+
+        $fragments = $testable->effects['islandFragments'] ?? [];
+
+        $this->assertCount(1, $fragments);
+        $this->assertStringContainsString('Hello World!', $fragments[0]);
+    }
+
+    #[Test]
+    public function islands_behind_conditions_enabled_by_the_called_action_are_regenerated()
+    {
+        $testable = $this->mountConditionalIslandComponent();
+
+        $testable->set('show', false);
+
+        File::deleteDirectory(app('livewire.compiler')->cacheManager->cacheDirectory.'/islands');
+        File::cleanDirectory(config('view.compiled'));
+
+        $testable->call('reveal');
+
+        $fragments = $testable->effects['islandFragments'] ?? [];
+
+        $this->assertCount(1, $fragments);
+        $this->assertStringContainsString('Hello World!', $fragments[0]);
+    }
+
+    /**
+     * An island whose tag stays unreachable cannot get its cache file back:
+     * the render has to fail instead of regenerating endlessly.
+     */
+    #[Test]
+    public function islands_unreachable_under_the_resulting_state_fail_without_recursing()
+    {
+        $testable = $this->mountConditionalIslandComponent();
+
+        $testable->set('show', false);
+
+        File::deleteDirectory(app('livewire.compiler')->cacheManager->cacheDirectory.'/islands');
+        File::cleanDirectory(config('view.compiled'));
+
+        $this->expectException(FileNotFoundException::class);
+
+        $testable->call('refreshStats');
     }
 
     #[Test]
@@ -696,6 +756,38 @@ class AntlersIslandsTest extends TestCase
     }
 
     #[Test]
+    public function placeholder_inside_a_noparse_region_is_not_extracted()
+    {
+        $testable = $this->mountIslandComponent('antlers-island-noparse-placeholder');
+
+        $testable->assertSee('Hello World!');
+        $testable->assertSee('{{ placeholder }}Documented placeholder{{ /placeholder }}', false);
+    }
+
+    #[Test]
+    public function escaped_placeholder_tags_are_not_extracted()
+    {
+        $testable = $this->mountIslandComponent('antlers-island-escaped-placeholder');
+
+        $testable->assertSee('Hello World!');
+        $testable->assertSee('{{ placeholder }}Documented placeholder{{ /placeholder }}', false);
+    }
+
+    /**
+     * A literal island tag inside noparse must not open a protected region
+     * that swallows the real placeholder behind it.
+     */
+    #[Test]
+    public function island_tag_inside_a_noparse_region_does_not_shift_placeholder_extraction()
+    {
+        $testable = $this->mountIslandComponent('antlers-island-noparse-island-example');
+
+        $testable->assertSee('Loading stats...');
+        $testable->assertDontSee('Hello World!');
+        $testable->assertSeeHtml('wire:intersect.once="__lazyLoadIsland"');
+    }
+
+    #[Test]
     public function empty_island_renders_and_can_be_targeted_from_php()
     {
         $component = new class extends Component
@@ -824,6 +916,48 @@ class AntlersIslandsTest extends TestCase
         Livewire::component('antlers-island-component', $component::class);
 
         return Livewire::test('antlers-island-component', ['viewName' => $view]);
+    }
+
+    /**
+     * The island only renders while "show" is true, so cache file
+     * regeneration depends on the state the incoming request produces.
+     */
+    protected function mountConditionalIslandComponent(): Testable
+    {
+        $component = new class extends Component
+        {
+            public string $name = 'World';
+
+            public bool $show = true;
+
+            public function updatedShow(): void
+            {
+                if ($this->show) {
+                    $this->renderIsland('stats');
+                }
+            }
+
+            public function reveal(): void
+            {
+                $this->show = true;
+
+                $this->renderIsland('stats');
+            }
+
+            public function refreshStats(): void
+            {
+                $this->renderIsland('stats');
+            }
+
+            public function render()
+            {
+                return view('antlers-island-conditional');
+            }
+        };
+
+        Livewire::component('antlers-island-conditional-component', $component::class);
+
+        return Livewire::test('antlers-island-conditional-component');
     }
 
     /**

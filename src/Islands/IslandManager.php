@@ -100,14 +100,15 @@ class IslandManager
 
     /**
      * Splits the placeholder region off the island template. Placeholder tags
-     * inside Antlers comments or nested islands stay untouched, so an outer
-     * pair may span a nested island with its own placeholder block.
+     * inside Antlers comments, noparse regions or nested islands, as well as
+     * escaped ("@"-prefixed) ones, stay untouched, so an outer pair may span
+     * a nested island with its own placeholder block.
      *
      * @return array{0: string, 1: string}
      */
     protected function extractPlaceholder(string $content): array
     {
-        if (! preg_match_all('/\{\{\s*\/?placeholder\s*\}\}/', $content, $matches, PREG_OFFSET_CAPTURE)) {
+        if (! preg_match_all('/(?<!@)\{\{\s*\/?placeholder\s*\}\}/', $content, $matches, PREG_OFFSET_CAPTURE)) {
             return [$content, ''];
         }
 
@@ -151,7 +152,8 @@ class IslandManager
     }
 
     /**
-     * Regions (Antlers comments, nested islands) ignored during placeholder extraction.
+     * Regions (Antlers comments, noparse regions, nested islands) ignored
+     * during placeholder extraction.
      *
      * @return array<int, array{0: int, 1: int}>
      */
@@ -159,13 +161,21 @@ class IslandManager
     {
         $regions = [];
 
-        preg_match_all('/\{\{#.*?#\}\}/s', $content, $comments, PREG_OFFSET_CAPTURE);
+        preg_match_all('/(?<!@)\{\{#.*?#\}\}/s', $content, $comments, PREG_OFFSET_CAPTURE);
 
         foreach ($comments[0] as [$comment, $offset]) {
             $regions[] = [$offset, $offset + strlen($comment)];
         }
 
-        preg_match_all('/\{\{\s*\/?\s*(?:livewire|lw|wire):island\b.*?\}\}/s', $content, $islandTags, PREG_OFFSET_CAPTURE);
+        preg_match_all('/(?<!@)\{\{\s*noparse\s*\}\}.*?(?<!@)\{\{\s*\/noparse\s*\}\}|(?<!@)\{\{\s*noparse\s*\}\}.*/s', $content, $noparseRegions, PREG_OFFSET_CAPTURE);
+
+        foreach ($noparseRegions[0] as [$region, $offset]) {
+            if (! $this->insideRegions($offset, $regions)) {
+                $regions[] = [$offset, $offset + strlen($region)];
+            }
+        }
+
+        preg_match_all('/(?<!@)\{\{\s*\/?\s*(?:livewire|lw|wire):island\b.*?\}\}/s', $content, $islandTags, PREG_OFFSET_CAPTURE);
 
         $depth = 0;
         $regionStart = null;

@@ -1,0 +1,9 @@
+<div>
+    {{ livewire:island name="stats" lazy="true" }}
+        {{ noparse }}{{ livewire:island name="docs" }}{{ /noparse }}
+        {{ placeholder }}
+            <p>Loading stats...</p>
+        {{ /placeholder }}
+        <p>Hello {{ name }}!</p>
+    {{ /livewire:island }}
+</div>
