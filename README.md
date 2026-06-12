@@ -271,6 +271,7 @@ A few things to keep in mind:
 - Same-name islands in one view are told apart by render order; rendering them conditionally can cross-wire their caches. Islands in different views of the same component are kept separate.
 - Keep island names static (as they are in Blade, where `@island` names are literals): the name is part of the island's cache file identity, so a dynamic name creates one cache file per distinct value.
 - The component's `render()` method should stay free of side effects (as Livewire recommends): after the compiled view cache has been cleared, the addon re-renders the component view once to regenerate the island files.
+- That regeneration pass renders island templates, not placeholders: an island nested inside another island's `{{ placeholder }}` gets its cache file back on the next fresh mount instead, so lazy-loading it right after a view cache clear can fail until the page is reloaded.
 - `island` is now a reserved method on the `{{ livewire }}` tag: `{{ livewire:island }}` no longer mounts a component named `island` — mount it with `{{ livewire component="island" }}` instead.
 
 ### Lazy Components
