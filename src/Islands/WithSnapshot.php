@@ -2,10 +2,10 @@
 
 namespace MarcoRieser\Livewire\Islands;
 
-use Exception;
 use Livewire\Component;
 use Livewire\Mechanisms\HandleComponents\ComponentContext;
 use MarcoRieser\Livewire\Exceptions\IslandException;
+use Throwable;
 
 use function Livewire\trigger;
 
@@ -35,7 +35,7 @@ class WithSnapshot
 
         try {
             return app('livewire')->snapshot($container, $context);
-        } catch (Exception $exception) {
+        } catch (Throwable $exception) {
             throw new IslandException('The with data of the {{ livewire:island }} tag could not be dehydrated: '.$exception->getMessage(), previous: $exception);
         }
     }
