@@ -6,6 +6,7 @@ use Illuminate\Contracts\View\View;
 use Livewire\ComponentHook;
 use Livewire\Drawer\Utils;
 use Livewire\Features\SupportIslands\Compiler\IslandCompiler;
+use Livewire\Mechanisms\HandleComponents\ViewContext;
 use MarcoRieser\Livewire\Islands\IslandManager;
 
 use function Livewire\trigger;
@@ -74,13 +75,15 @@ class AntlersIslandsRegenerator extends ComponentHook
 
             $finish = trigger('render', $this->component, $view, $properties);
 
-            $html = $view->render();
+            $viewContext = new ViewContext;
+
+            $html = $view->render(fn ($view) => $viewContext->extractFromEnvironment($view->getFactory()));
 
             $replaceHtml = function ($newHtml) use (&$html) {
                 $html = $newHtml;
             };
 
-            $finish($html, $replaceHtml);
+            $finish($html, $replaceHtml, $viewContext);
         }
 
         $this->regenerateNestedIslandCacheFiles($islands);
