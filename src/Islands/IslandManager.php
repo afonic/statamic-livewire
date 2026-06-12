@@ -261,11 +261,7 @@ class IslandManager
     {
         File::ensureDirectoryExists(dirname($path));
 
-        $temporaryPath = $path.'.'.bin2hex(random_bytes(8)).'.tmp';
-
-        file_put_contents($temporaryPath, $contents);
-
-        rename($temporaryPath, $path);
+        File::replace($path, $contents);
 
         app('livewire.compiler')->cacheManager->prepareGeneratedFileForCompilation($path);
     }
