@@ -13,6 +13,7 @@ use MarcoRieser\Livewire\Hooks\ComputedPropertiesAutoloader;
 use MarcoRieser\Livewire\Hooks\SynthesizerAugmentor;
 use MarcoRieser\Livewire\Http\Middleware\HydrateCascadeByLivewireUrl;
 use MarcoRieser\Livewire\Http\Middleware\ResolveCurrentSiteByLivewireUrl;
+use Statamic\Http\Middleware\AddViewPaths;
 use Statamic\Http\Middleware\Localize;
 use Statamic\Providers\AddonServiceProvider;
 
@@ -43,6 +44,10 @@ class ServiceProvider extends AddonServiceProvider
         $this->bootMiddlewares();
     }
 
+    /**
+     * AddViewPaths runs after the site resolver so update-request renders
+     * resolve the same site-specific views as the initial page render.
+     */
     protected function bootLocalization(): void
     {
         if (! config()->boolean('statamic-livewire.localization', true)) {
@@ -51,6 +56,7 @@ class ServiceProvider extends AddonServiceProvider
 
         $this->middlewares[] = ResolveCurrentSiteByLivewireUrl::class;
         $this->middlewares[] = Localize::class;
+        $this->middlewares[] = AddViewPaths::class;
     }
 
     protected function bootCascadeRestoration(): void

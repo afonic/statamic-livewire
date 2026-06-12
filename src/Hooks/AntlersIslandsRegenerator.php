@@ -28,8 +28,23 @@ class AntlersIslandsRegenerator extends ComponentHook
     {
         app(IslandManager::class)->startRenderPass(
             $this->component,
-            $view instanceof View ? (string) $view->name() : '',
+            $view instanceof View ? $this->viewIdentity($view) : '',
         );
+    }
+
+    /**
+     * Site-specific views resolve under one logical name, so tokens identify
+     * the resolved view file rather than the name.
+     */
+    protected function viewIdentity(View $view): string
+    {
+        $path = method_exists($view, 'getPath') ? (string) $view->getPath() : '';
+
+        if ($path === '') {
+            return (string) $view->name();
+        }
+
+        return str_starts_with($path, base_path()) ? ltrim(substr($path, strlen(base_path())), DIRECTORY_SEPARATOR) : $path;
     }
 
     /**

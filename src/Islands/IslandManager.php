@@ -16,7 +16,7 @@ class IslandManager
 
     protected const OCCURRENCES_STORE_KEY = 'antlersIslandsOccurrences';
 
-    protected const VIEW_NAME_STORE_KEY = 'antlersIslandsViewName';
+    protected const VIEW_IDENTITY_STORE_KEY = 'antlersIslandsViewIdentity';
 
     protected const ROOT_CONTEXT = 'root';
 
@@ -70,9 +70,9 @@ class IslandManager
     /**
      * Registers the rendered view and restarts occurrence counting for the pass.
      */
-    public function startRenderPass(Component $component, string $viewName): void
+    public function startRenderPass(Component $component, string $viewIdentity): void
     {
-        store($component)->set(static::VIEW_NAME_STORE_KEY, $viewName);
+        store($component)->set(static::VIEW_IDENTITY_STORE_KEY, $viewIdentity);
 
         $this->resetOccurrences($component, $this->rootContext($component));
     }
@@ -223,8 +223,8 @@ class IslandManager
     }
 
     /**
-     * Mirrors core's path+occurrence token scheme: component name, rendered
-     * view (or containing island) and island name plus a render-order
+     * Mirrors core's path+occurrence token scheme: component name, resolved
+     * view file (or containing island) and island name plus a render-order
      * occurrence — independent of template contents and "with" data.
      */
     protected function token(Component $component, string $name): string
@@ -248,14 +248,14 @@ class IslandManager
     }
 
     /**
-     * Root tokens are scoped to the rendered view so same-name islands in
-     * different views of the same component keep their own cache files.
+     * Root tokens are scoped to the resolved view file so same-name islands
+     * in different views or site-specific view variants keep their own cache files.
      */
     protected function rootContext(Component $component): string
     {
-        $viewName = store($component)->get(static::VIEW_NAME_STORE_KEY, '');
+        $viewIdentity = store($component)->get(static::VIEW_IDENTITY_STORE_KEY, '');
 
-        return $viewName === '' ? static::ROOT_CONTEXT : static::ROOT_CONTEXT.'|'.$viewName;
+        return $viewIdentity === '' ? static::ROOT_CONTEXT : static::ROOT_CONTEXT.'|'.$viewIdentity;
     }
 
     protected function resetOccurrences(Component $component, string $context): void
