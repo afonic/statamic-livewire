@@ -17,6 +17,8 @@ use MarcoRieser\Livewire\Islands\WithSnapshot;
 use MarcoRieser\Livewire\Tests\TestCase;
 use PHPUnit\Framework\Attributes\Test;
 
+use function Orchestra\Testbench\package_path;
+
 class AntlersIslandsTest extends TestCase
 {
     /**
@@ -553,6 +555,51 @@ class AntlersIslandsTest extends TestCase
     }
 
     /**
+     * A cascade key colliding with a computed property resolves to the
+     * cascade value in full views, so islands resolve the same value.
+     */
+    #[Test]
+    public function colliding_cascade_variables_override_computed_properties_inside_islands()
+    {
+        $component = new
+        #[Cascade]
+        class extends Component
+        {
+            public function refreshStats(): void
+            {
+                $this->renderIsland('stats');
+            }
+
+            #[Computed]
+            public function environment(): string
+            {
+                return 'Computed environment';
+            }
+
+            public function render()
+            {
+                return view('antlers-island-cascade-computed-collision');
+            }
+        };
+
+        Livewire::component('antlers-island-cascade-collision-component', $component::class);
+
+        $testable = Livewire::test('antlers-island-cascade-collision-component');
+
+        $testable->assertSee('Outside: testing');
+        $testable->assertSee('Inside: testing');
+        $testable->assertDontSee('Computed environment');
+
+        $testable->call('refreshStats');
+
+        $fragments = $testable->effects['islandFragments'] ?? [];
+
+        $this->assertCount(1, $fragments);
+        $this->assertStringContainsString('Inside: testing', $fragments[0]);
+        $this->assertStringNotContainsString('Computed environment', $fragments[0]);
+    }
+
+    /**
      * Captured "with" values land after computed properties in the island context.
      */
     #[Test]
@@ -743,6 +790,47 @@ class AntlersIslandsTest extends TestCase
 
         $this->assertCount(1, $fragments);
         $this->assertStringContainsString('Hello World!', $fragments[0]);
+    }
+
+    /**
+     * Statamic's AddViewPaths middleware resolves one logical view name to
+     * site-specific files, so tokens identify the resolved file per site.
+     */
+    #[Test]
+    public function site_specific_views_sharing_a_name_keep_their_own_island_cache_files()
+    {
+        $finder = view()->getFinder();
+        $paths = $finder->getPaths();
+        $sitePaths = array_merge([package_path().'/tests/__fixtures__/views/de'], $paths);
+
+        $finder->setPaths($sitePaths);
+        $finder->flush();
+
+        $siteSpecific = $this->mountIslandComponent('antlers-island-site');
+
+        $siteSpecific->assertSee('Hallo from the site view!');
+
+        $finder->setPaths($paths);
+        $finder->flush();
+
+        $base = $this->mountIslandComponent('antlers-island-site');
+
+        $base->assertSee('Hello from the base view!');
+
+        preg_match('/token=(antlers-[a-f0-9\-]+)/', $siteSpecific->html(), $siteMatches);
+        preg_match('/token=(antlers-[a-f0-9\-]+)/', $base->html(), $baseMatches);
+
+        $this->assertNotSame($siteMatches[1], $baseMatches[1]);
+
+        $finder->setPaths($sitePaths);
+        $finder->flush();
+
+        $siteSpecific->call('refreshStats');
+
+        $fragments = $siteSpecific->effects['islandFragments'] ?? [];
+
+        $this->assertCount(1, $fragments);
+        $this->assertStringContainsString('Hallo from the site view!', $fragments[0]);
     }
 
     #[Test]

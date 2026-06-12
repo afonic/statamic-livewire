@@ -40,7 +40,8 @@ class IslandRenderer
     }
 
     /**
-     * Mirrors the context the addon provides to full Antlers component views.
+     * Mirrors the layering of the computed property and cascade autoloader
+     * hooks on full Antlers component views, with island "with" data on top.
      *
      * @param  array<string, mixed>  $scope
      * @return array<string, mixed>
@@ -53,10 +54,12 @@ class IslandRenderer
 
         $scope = array_diff_key($scope, array_flip(self::EXCLUDED_SCOPE_VARIABLES));
 
+        $cascade = $component instanceof Component ? CascadeVariablesAutoloader::cascadeVariables($component) : [];
+
         return array_merge(
-            $component instanceof Component ? CascadeVariablesAutoloader::cascadeVariables($component) : [],
             $scope,
             $component instanceof Component ? ComputedPropertiesAutoloader::computedProperties($component) : [],
+            $cascade === [] ? [] : array_merge($cascade, $scope),
             $component instanceof Component ? $this->withVariables($component, $token) : [],
             is_array($runtimeWith) ? $runtimeWith : [],
         );
