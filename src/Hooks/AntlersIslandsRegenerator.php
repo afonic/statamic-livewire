@@ -44,7 +44,9 @@ class AntlersIslandsRegenerator extends ComponentHook
             return (string) $view->name();
         }
 
-        return str_starts_with($path, base_path()) ? ltrim(substr($path, strlen(base_path())), DIRECTORY_SEPARATOR) : $path;
+        $basePath = rtrim(base_path(), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR;
+
+        return str_starts_with($path, $basePath) ? substr($path, strlen($basePath)) : $path;
     }
 
     /**
